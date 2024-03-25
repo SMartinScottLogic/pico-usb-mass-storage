@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use core::mem::MaybeUninit;
+use core::{fmt::Debug, mem::MaybeUninit};
 
 use bsp::entry;
 use defmt::*;
@@ -27,6 +27,7 @@ use usb_device::{class_prelude::*, prelude::*};
 /// Not necessarily `'static`. May reside in some special memory location
 static mut USB_TRANSPORT_BUF: MaybeUninit<[u8; 512]> = MaybeUninit::uninit();
 static mut STORAGE: [u8; (BLOCKS * BLOCK_SIZE) as usize] = [0u8; (BLOCK_SIZE * BLOCKS) as usize];
+static mut UNLOGGED_WRITE: bool = false;
 
 static mut STATE: State = State {
     storage_offset: 0,
@@ -111,6 +112,12 @@ fn main() -> ! {
 
     loop {
         if !usb_device.poll(&mut [&mut scsi]) {
+            unsafe {
+                if UNLOGGED_WRITE {
+                    log_storage();
+                    UNLOGGED_WRITE = false;
+                }
+            }
             continue;
         }
 
@@ -196,7 +203,7 @@ fn process_command(
             let _ = &mut data[0..4].copy_from_slice(&[
                 0x00, 0x00, 0x00, 0x08, // capacity list length
             ]);
-            let _ = &mut data[4..8].copy_from_slice(&u32::to_be_bytes(BLOCKS as u32)); // number of blocks
+            let _ = &mut data[4..8].copy_from_slice(&u32::to_be_bytes(BLOCKS)); // number of blocks
             data[8] = 0x01; //unformatted media
             let block_length_be = u32::to_be_bytes(BLOCK_SIZE);
             data[9] = block_length_be[1];
@@ -216,7 +223,7 @@ fn process_command(
                 // Uncomment this in order to push data in chunks smaller than a USB packet.
                 // let end = min(start + USB_PACKET_SIZE as usize - 1, end);
 
-                let count = command.write_data(&mut STORAGE[start..end])?;
+                let count = command.write_data(&STORAGE[start..end])?;
                 STATE.storage_offset += count;
             } else {
                 command.pass();
@@ -231,6 +238,8 @@ fn process_command(
                 let end = (BLOCK_SIZE * lba) as usize + (BLOCK_SIZE * len) as usize;
                 let count = command.read_data(&mut STORAGE[start..end])?;
                 STATE.storage_offset += count;
+
+                UNLOGGED_WRITE = true;
 
                 if STATE.storage_offset == (len * BLOCK_SIZE) as usize {
                     command.pass();
@@ -266,4 +275,135 @@ fn process_command(
     }
 
     Ok(())
+}
+
+fn log_storage() {
+    for i in 0..4 {
+        info!(
+            "partition {}: {}",
+            i,
+            defmt::Debug2Format(&read_partition(i))
+        );
+    }
+
+    // let digits = b"0123456789ABCDEF";
+    // let mut bytes = [b' '; 16 * 3];
+    // let mut chars = [b' '; 16];
+    // let total_bytes = (BLOCKS * BLOCK_SIZE) as usize;
+    // for row_start in (0..total_bytes).step_by(16) {
+    //     let mut all_zero = true;
+    //     for i in 0..16_usize {
+    //         if row_start + i < total_bytes {
+    //             let cur_byte = unsafe { STORAGE[row_start + i] };
+    //             if cur_byte != 0 {
+    //                 all_zero = false;
+    //             }
+    //             bytes[i * 3 + 0] = digits[((cur_byte / 16) & 0x0f) as usize];
+    //             bytes[i * 3 + 1] = digits[(cur_byte & 0x0f) as usize];
+    //             bytes[i * 3 + 2] = b' ';
+    //             chars[i] = sanitize_byte(cur_byte) as u8;
+    //         } else {
+    //             bytes[i * 3 + 0] = b' ';
+    //             bytes[i * 3 + 1] = b' ';
+    //             bytes[i * 3 + 2] = b' ';
+    //             chars[i] = b' ';
+    //         }
+    //     }
+    //     if !all_zero {
+    //         let bytes: &str = unsafe { core::mem::transmute(bytes.as_slice()) };
+    //         let chars: &str = unsafe { core::mem::transmute(chars.as_slice()) };
+    //         info!("{} @ {}: {}....{}", kind, row_start, bytes, chars);
+    //     }
+    // }
+}
+
+pub fn sanitize_byte(byte: u8) -> char {
+    if (0x20..0x7f).contains(&byte) {
+        byte as char
+    } else {
+        '.'
+    }
+}
+
+#[derive(Clone)]
+pub struct Partition {
+    /// Partition Status
+    pub p_status: u8,
+    /// Start cylinder (Legacy CHS)
+    pub p_cyl_begin: u8,
+    /// Start head (Legacy CHS)
+    pub p_head_begin: u8,
+    /// Start sector (Legacy CHS)
+    pub p_sect_begin: u8,
+    /// Partition Type (DOS, Windows, BeOS, etc)
+    pub p_type: u8,
+    /// End cylinder (Legacy CHS)
+    pub p_cyl_end: u8,
+    /// End head (Legacy CHS)
+    pub p_head_end: u8,
+    /// End sector
+    pub p_sect_end: u8,
+    /// Logical block address to start of partition
+    pub p_lba: u32,
+    /// Number of sectors in partition
+    pub p_size: u32,
+}
+impl Debug for Partition {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Partition")
+            .field("p_type", &format_args!("{:#02x}", self.p_type))
+            .field("p_status", &format_args!("{:#02x}", self.p_status))
+            .field("p_cyl_begin", &format_args!("{:#02x}", self.p_cyl_begin))
+            .field("p_cyl_end", &format_args!("{:#02x}", self.p_cyl_end))
+            .field("p_head_begin", &format_args!("{:#02x}", self.p_head_begin))
+            .field("p_head_end", &format_args!("{:#02x}", self.p_head_end))
+            .field("p_sect_begin", &format_args!("{:#02x}", self.p_sect_begin))
+            .field("p_sect_end", &format_args!("{:#02x}", self.p_sect_end))
+            .field("p_lba", &format_args!("{:#08x}", self.p_lba))
+            .field("p_size", &format_args!("{:#08x}", self.p_size))
+            .finish()
+    }
+}
+pub struct ByteReader {
+    position: u64,
+}
+impl ByteReader {
+    fn new(position: u64) -> Self {
+        Self { position }
+    }
+    fn read1(&mut self) -> u8 {
+        let value = unsafe { STORAGE[self.position as usize] };
+        self.position += 1;
+        value
+    }
+    fn read4(&mut self) -> u32 {
+        let value = unsafe {
+            ((STORAGE[(self.position + 3) as usize] as u32) << 24)
+                + ((STORAGE[(self.position + 2) as usize] as u32) << 16)
+                + ((STORAGE[(self.position + 1) as usize] as u32) << 8)
+                + ((STORAGE[(self.position + 0) as usize] as u32) << 0)
+        };
+        self.position += 4;
+        value
+    }
+}
+fn read_partition(index: u8) -> Partition {
+    defmt::assert!(index < 4);
+
+    let position: u64 = 446 + (16 * (index as u64));
+
+    let mut byte_reader = ByteReader::new(position);
+
+    Partition {
+        p_status: byte_reader.read1(),
+        p_head_begin: byte_reader.read1(),
+        p_sect_begin: byte_reader.read1(),
+        p_cyl_begin: byte_reader.read1(),
+        p_type: byte_reader.read1(),
+        p_head_end: byte_reader.read1(),
+        p_sect_end: byte_reader.read1(),
+        p_cyl_end: byte_reader.read1(),
+        p_lba: byte_reader.read4(),
+        p_size: byte_reader.read4(),
+    }
 }

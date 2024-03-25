@@ -23,7 +23,7 @@ rp-pico = "0.8"
 # rp2040-hal = { version="0.8", features=["rt", "critical-section-impl"] }
 # rp2040-boot2 = "0.2"
 
-usb-device = { version = "0.2.9", features = ["defmt"] }
+usb-device = { version = "=0.2.9", features = ["defmt"] }
 num_enum = { version = "0.6.0", default-features = false }
 
 # cargo build/run
