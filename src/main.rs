@@ -2,7 +2,7 @@
 #![no_main]
 
 use core::{marker::PhantomData, mem::MaybeUninit};
-use defmt::error;
+use defmt::{error, info};
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
@@ -195,7 +195,8 @@ async fn process_command<'a, 'd, D: embassy_usb::driver::Driver<'d>>(
             }
             command.pass();
         }
-        ScsiCommand::ReadFormatCapacities { .. } => {
+        ScsiCommand::ReadFormatCapacities { alloc_len } => {
+            info!("ReadFormatCapacities {{ alloc_len: {} }}", alloc_len);
             let mut data = [0u8; 12];
             let _ = &mut data[0..4].copy_from_slice(&[
                 0x00, 0x00, 0x00, 0x08, // capacity list length
@@ -209,8 +210,18 @@ async fn process_command<'a, 'd, D: embassy_usb::driver::Driver<'d>>(
 
             let count = command.write_data(&data).await?;
             if count != data.len() {
+                error!(
+                    "ReadFormatCapacities {{ alloc_len: {} }}: count = {}, data_len = {}",
+                    alloc_len,
+                    count,
+                    data.len()
+                );
                 return Err(TransportError::Error(BulkOnlyError::IoBufferOverflow));
             }
+            info!(
+                "ReadFormatCapacities {{ alloc_len: {} }}: count = {}",
+                alloc_len, count
+            );
             command.pass();
         }
         ScsiCommand::Read { lba, len } => unsafe {
