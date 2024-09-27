@@ -114,7 +114,7 @@ async fn main(#[allow(unused_variables)] spawner: Spawner) {
 
         //let mut blinky = Blinky::build(fw, clm, pwr, spi, spawner).await;
         //let server = server::echo::Server::new();
-        let server = server::okay::Server::new();
+        let server = server::webdav::Server::new();
         wifi::server::Server::build(fw, clm, pwr, spi, spawner, server).await
     };
 
