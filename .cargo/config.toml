@@ -29,6 +29,6 @@ rustflags = [
 target = "thumbv6m-none-eabi"
 
 [env]
-DEFMT_LOG = "debug"
+DEFMT_LOG = "info"
 WIFI_NETWORK = { value = "wifinet", force = false }
 WIFI_PASSWORD = { value = "wifipass", force = false }
