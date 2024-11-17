@@ -8,12 +8,16 @@ pub(super) enum Error {
     ReadEof,
     ConnectionReset,
     IncompleteHeaderRead,
+    MissingHttpMethod,
+    UnknownHttpMethod,
     UnknownContentLength,
     InvalidContentLength,
     MultipleContentLengths,
+    InvalidPath,
     HttpParse(httparse::Error),
     Utf8(usize, Option<usize>),
     ParseInt(IntErrorKind),
+    CoreIo,
 }
 impl From<Utf8Error> for Error {
     fn from(value: Utf8Error) -> Self {
@@ -25,20 +29,30 @@ impl From<ParseIntError> for Error {
         Self::ParseInt(value.kind().clone())
     }
 }
+impl From<core2::io::Error> for Error {
+    fn from(_value: core2::io::Error) -> Self {
+        Self::CoreIo
+    }
+}
 impl Format for Error {
     fn format(&self, fmt: Formatter) {
+        use Error::*;
         match self {
-            Error::ReadEof => write!(fmt, "ReadEof"),
-            Error::ConnectionReset => write!(fmt, "ConnectionReset"),
-            Error::IncompleteHeaderRead => write!(fmt, "IncompleteHeaderRead"),
-            Error::UnknownContentLength => write!(fmt, "UnknownContentLength"),
-            Error::InvalidContentLength => write!(fmt, "InvalidContentLength"),
-            Error::MultipleContentLengths => write!(fmt, "MultipleContentLengths"),
-            Error::HttpParse(error) => write!(fmt, "ParseError({})", error.to_string()),
-            Error::Utf8(a, b) => write!(fmt, "Utf8Error({}, {:?})", a, b),
-            Error::ParseInt(int_error_kind) => {
+            ReadEof => write!(fmt, "ReadEof"),
+            ConnectionReset => write!(fmt, "ConnectionReset"),
+            IncompleteHeaderRead => write!(fmt, "IncompleteHeaderRead"),
+            MissingHttpMethod => write!(fmt, "MissingHttpMethod"),
+            UnknownHttpMethod => write!(fmt, "UnknownHttpMethod"),
+            UnknownContentLength => write!(fmt, "UnknownContentLength"),
+            InvalidContentLength => write!(fmt, "InvalidContentLength"),
+            MultipleContentLengths => write!(fmt, "MultipleContentLengths"),
+            InvalidPath => write!(fmt, "InvalidPath"),
+            HttpParse(error) => write!(fmt, "ParseError({})", error.to_string()),
+            Utf8(a, b) => write!(fmt, "Utf8Error({}, {:?})", a, b),
+            ParseInt(int_error_kind) => {
                 write!(fmt, "ParseIntError({})", int_error_kind.to_string())
             }
+            CoreIo => write!(fmt, "Core2IoError"),
         }
     }
 }

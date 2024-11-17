@@ -74,6 +74,7 @@ overlay = "1.0"
 overlay_macro = "2.0"
 embedded-graphics = "0.8.1"
 httparse = { version = "1.9.4", default-features = false }
+core2 = { version = "0.4.0", default-features = false }
 
 # cargo build/run
 [profile.dev]
