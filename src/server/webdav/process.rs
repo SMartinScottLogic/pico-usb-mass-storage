@@ -1,3 +1,5 @@
+use crate::fat12_partition;
+
 use super::error::Error;
 use super::error::ToStaticString as _;
 use core2::io::Write as _;
@@ -118,12 +120,32 @@ impl<const BUFFER_SIZE: usize, const NUM_OF_HEADERS: usize> Processor<BUFFER_SIZ
     }
 
     async fn get(&self, socket: &mut TcpSocket<'_>, path: &str) -> Result<(), Error> {
+        let mut response_body = [0; BUFFER_SIZE];
+        let response_body_size = {
+            #[allow(static_mut_refs)]
+            let storage = unsafe { &mut crate::STORAGE };
+
+            #[allow(static_mut_refs)]
+            fat12_partition::log_fs(
+                storage.as_bytes_mut(),
+                crate::storage::BLOCKS as _,
+                crate::storage::BLOCK_SIZE as _,
+            );
+            fat12_partition::read(
+                storage.as_bytes_mut(),
+                crate::storage::BLOCKS as _,
+                crate::storage::BLOCK_SIZE as _,
+                path,
+                &mut response_body,
+            )
+            .map_err(|_| Error::ReadEof)?
+        };
         let mut headers = [0; BUFFER_SIZE];
         let mut cur = core2::io::Cursor::new(headers.as_mut_slice());
         write!(
             cur,
             "HTTP/1.1 200 Ok\r\nContent-Type: text/plain\r\nContent-Length: {}",
-            (path.len() + 2) * 1000
+            response_body_size
         )?;
         // Headers
         socket
@@ -136,16 +158,10 @@ impl<const BUFFER_SIZE: usize, const NUM_OF_HEADERS: usize> Processor<BUFFER_SIZ
             .await
             .map_err(|_err| Error::ConnectionReset)?;
         // Body
-        for _ in 0..1000 {
-            socket
-                .write_all(path.as_bytes())
-                .await
-                .map_err(|_err| Error::ConnectionReset)?;
-            socket
-                .write_all(b"\r\n")
-                .await
-                .map_err(|_err| Error::ConnectionReset)?;
-        }
+        socket
+            .write_all(&response_body)
+            .await
+            .map_err(|_err| Error::ConnectionReset)?;
         Ok(())
     }
 

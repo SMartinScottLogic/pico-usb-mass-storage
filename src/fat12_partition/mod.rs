@@ -2,6 +2,7 @@ mod setup;
 
 use defmt::{error, info, Format};
 use embassy_rp::rom_data::memcpy;
+use fatfs::Read;
 pub use setup::init;
 
 use crate::{DisplayState, SIGNAL};
@@ -148,6 +149,28 @@ pub fn log_fs(data: &mut [u8], blocks: u64, block_size: u64) {
     SIGNAL.signal(DisplayState::FileSystem(volume_lbl, free_space));
 }
 
+pub fn read(
+    data: &mut [u8],
+    blocks: u64,
+    block_size: u64,
+    path: &str,
+    buf: &mut [u8],
+) -> Result<usize, fatfs::Error<MemFSError>> {
+    let partition = read_partition(data, 0);
+    info!("partition {}: {}", 0, partition);
+
+    let options = fatfs::FsOptions::new().update_accessed_date(false);
+
+    let disk = MemFS::new(
+        &mut data[(block_size * partition.p_lba as u64) as usize..],
+        blocks,
+        block_size,
+    );
+    let fs = fatfs::FileSystem::new(disk, options)?;
+    let mut file = fs.root_dir().open_file(path)?;
+    file.read(buf)
+}
+
 fn log_dir<IO, TP, OCC>(parent: &str, dir: &fatfs::Dir<IO, TP, OCC>, depth: usize)
 where
     IO: fatfs::ReadWriteSeek,
@@ -253,7 +276,7 @@ impl fatfs::Seek for MemFS<'_> {
 }
 
 #[derive(Debug)]
-struct MemFSError {}
+pub struct MemFSError {}
 impl fatfs::IoError for MemFSError {
     fn is_interrupted(&self) -> bool {
         false
