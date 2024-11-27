@@ -2,7 +2,8 @@ use embassy_net::tcp::TcpSocket;
 
 //pub mod echo;
 //pub mod okay;
-pub mod webdav;
+//pub mod webdav;
+pub mod smb;
 
 pub trait SocketServer {
     async fn run(&mut self, socket: TcpSocket)

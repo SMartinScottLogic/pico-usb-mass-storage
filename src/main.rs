@@ -23,6 +23,7 @@ mod bulk_only_transport;
 mod storage;
 use storage::Storage;
 
+mod alloc;
 mod fat12_partition;
 mod screen;
 mod server;
@@ -64,6 +65,7 @@ assign_resources! {
 
 #[embassy_executor::main]
 async fn main(#[allow(unused_variables)] spawner: Spawner) {
+    alloc::init_allocator();
     #[allow(static_mut_refs)]
     fat12_partition::init(unsafe { &mut STORAGE });
 
@@ -114,7 +116,8 @@ async fn main(#[allow(unused_variables)] spawner: Spawner) {
 
         //let mut blinky = Blinky::build(fw, clm, pwr, spi, spawner).await;
         //let server = server::echo::Server::new();
-        let server = server::webdav::Server::new();
+        //let server = server::webdav::Server::new();
+        let server = server::smb::Server::new();
         wifi::server::Server::build(fw, clm, pwr, spi, spawner, server).await
     };
 

@@ -18,6 +18,7 @@ use static_cell::StaticCell;
 
 const WIFI_NETWORK: &str = env!("WIFI_NETWORK");
 const WIFI_PASSWORD: &str = env!("WIFI_PASSWORD");
+const LISTEN_PORT: Option<&str> = option_env!("LISTEN_PORT");
 
 #[embassy_executor::task]
 async fn wifi_task(
@@ -42,6 +43,7 @@ where
     control: Control<'static>,
     stack: &'a Stack<Device<'static>>,
     server: S,
+    listen_port: u16,
 }
 
 impl<'a, S> Server<'a, S>
@@ -56,6 +58,10 @@ where
         spawner: Spawner,
         server: S,
     ) -> Self {
+        let listen_port = LISTEN_PORT
+            .unwrap_or("1234")
+            .parse()
+            .expect("failed to read port");
         static STATE: StaticCell<cyw43::State> = StaticCell::new();
         let state = STATE.init(cyw43::State::new());
         let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
@@ -113,6 +119,7 @@ where
             control,
             stack,
             server,
+            listen_port,
         }
     }
 
@@ -126,8 +133,8 @@ where
             socket.set_timeout(Some(Duration::from_secs(10)));
 
             self.control.gpio_set(0, false).await;
-            info!("Listening on TCP:1234...");
-            if let Err(e) = socket.accept(1234).await {
+            info!("Listening on TCP:{}...", self.listen_port);
+            if let Err(e) = socket.accept(self.listen_port).await {
                 warn!("accept error: {:?}", e);
                 continue;
             }
