@@ -164,7 +164,7 @@ impl<'scsi, BD: BlockDevice> bulk_only_transport::Handler for BulkHandler<'scsi,
         match command {
             Command::ReadCapacity(_read_capacity10) => {
                 // TODO: support read_capacity16 etc
-                let max_lba = self.block_device.block_count();
+                let max_lba = self.block_device.block_count() - 1;
                 let block_size = BD::BLOCK_BYTES as u32;
                 let mut cap = ReadCapacity10Response::new();
 
@@ -259,7 +259,7 @@ impl<'scsi, BD: BlockDevice> bulk_only_transport::Handler for BulkHandler<'scsi,
             }
             Command::ModeSense(_) => todo!(),
             Command::ReadFormatCapacities(ReadFormatCapacitiesCommand { .. }) => {
-                let max_lba = self.block_device.block_count();
+                let max_lba = self.block_device.block_count() - 1;
                 let block_size = BD::BLOCK_BYTES as u32;
 
                 let mut response = [0u8; 12];
